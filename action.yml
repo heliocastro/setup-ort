@@ -1,0 +1,75 @@
+name: Install OSS Review Toolkit
+description: Setup Ort
+inputs:
+  ort-version:
+    description: 'Version of Ort'
+    required: false
+  sdks:
+    description: 'Sdks to be installed'
+    required: false
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-java@v5
+      with:
+        distribution: 'temurin' # See 'Supported distributions' for available options
+        java-version: '21'
+
+    - uses: astral-sh/setup-uv@v7
+      env:
+        UV_PROJECT_ENVIRONMENT: ${{ runner.tool_cache }}/venvs
+      with:
+        activate-environment: 'true'
+        python-version: '3.13'
+        cache-python: 'true'
+
+    - shell: bash
+      run: |
+        uv pip install \
+          scancode-toolkit==32.4.1
+
+    - name: Setup Ort Python requirements
+      if: contains(inputs.sdks, 'python')
+      shell: bash
+      run: |
+        uv pip install \
+          setuptools==74.1.3 \
+          poetry==2.1.3 \
+          pipenv==2023.12.1 \
+          python-inspector==0.15.0 \
+          pip==25.3.0
+
+    - shell: bash
+      run: |
+        LATEST_VERSION=$(curl --silent "https://api.github.com/repos/oss-review-toolkit/ort/releases/latest" | jq -r .tag_name)
+        ORT_VERSION=${ORT_VERSION:-$LATEST_VERSION}
+        if [ -n "${{ inputs.ort-version }}" ]; then
+          echo "ORT_VERSION=${{ inputs.ort-version }}" >> $GITHUB_ENV
+        else
+          echo "ORT_VERSION=${ORT_VERSION}" >> $GITHUB_ENV
+        fi
+        echo "Using Ort version: ${ORT_VERSION}"
+
+    - uses: actions/cache@v5
+      with:
+        path: ${{ runner.tool_cache }}/cache/ort
+        key: ${{ runner.os }}-ort-${{ env.ORT_VERSION }} }}
+
+    - shell: bash
+      run: |
+        set -euo pipefail
+
+        # Create ort directory in Github runner tool
+        mkdir -p ${{ runner.tool_cache }}/ort
+
+        for tooling in ort orth; do
+          curl -L "https://github.com/oss-review-toolkit/ort/releases/download/${ORT_VERSION}/$tooling-${ORT_VERSION}.tgz" | tar -C "${{ runner.tool_cache }}/ort" -xz --strip-components=1
+
+        done
+
+        PATH="$PATH:${{ runner.tool_cache }}/ort/bin"
+
+        echo "Installed Ort version: $(ort --version)"
+
+        echo "${{ runner.tool_cache }}/ort/bin" >> $GITHUB_PATH
